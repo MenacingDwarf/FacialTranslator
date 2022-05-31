@@ -1,6 +1,6 @@
 import math
 import numpy as np
-from pylivelinkface import PyLiveLinkFace, FaceBlendShape
+from .live_link_face_formatter import LiveLinkFaceFormatter, FaceBlendShape
 from google.protobuf.internal.containers import RepeatedCompositeFieldContainer
 from .blendshape_config import BlendShapeConfig
 
@@ -13,14 +13,14 @@ class BlendshapeCalculator():
     def __init__(self) -> None:
         self.blend_shape_config = BlendShapeConfig()        
         
-    def calculate_blendshapes(self, live_link_face: PyLiveLinkFace, metric_landmarks: np.ndarray, normalized_landmarks: RepeatedCompositeFieldContainer) -> None:
+    def calculate_blendshapes(self, live_link_face: LiveLinkFaceFormatter, metric_landmarks: np.ndarray, normalized_landmarks: RepeatedCompositeFieldContainer) -> None:
         """ Calculate the blendshapes from the given landmarks. 
         
         This function calculates the blendshapes from the given landmarks and stores them in the given live_link_face.
         
         Parameters
         ----------
-        live_link_face : PyLiveLinkFace
+        live_link_face : LiveLinkFaceFormatter
             Index of the BlendShape to get the value from.
         metric_landmarks: np.ndarray
             The metric landmarks of the face in 3d.

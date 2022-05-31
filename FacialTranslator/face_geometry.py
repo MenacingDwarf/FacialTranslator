@@ -18,31 +18,6 @@
 
 import numpy as np
 
-
-class Singleton(type):
-    _instances = {}
-
-    def __call__(cls, *args, **kwargs):
-        if cls not in cls._instances:
-            cls._instances[cls] = super(Singleton, cls).__call__(*args, **kwargs)
-        return cls._instances[cls]
-
-
-class Debugger(metaclass=Singleton):
-    def set_debug(self, debug):
-        self.debug = debug
-
-    def toggle(self):
-        self.debug = not self.debug
-
-    def get_debug(self):
-        return self.debug
-
-
-DEBUG = Debugger()
-DEBUG.set_debug(False)
-
-
 class PCF:
     def __init__(
         self,
@@ -2460,25 +2435,6 @@ landmark_weights = np.zeros((canonical_metric_landmarks.shape[1],))
 for idx, weight in procrustes_landmark_basis:
     landmark_weights[idx] = weight
 
-
-def log(name, f):
-    if DEBUG.get_debug():
-        print(f"{name} logged:", f)
-        print()
-
-
-def cpp_compare(name, np_matrix):
-    if DEBUG.get_debug():
-        # reorder cpp matrix as memory alignment is not correct
-        cpp_matrix = np.load(f"{name}_cpp.npy")
-        rows, cols = cpp_matrix.shape
-        cpp_matrix = np.split(np.reshape(cpp_matrix, -1), cols)
-        cpp_matrix = np.stack(cpp_matrix, 1)
-
-        print(f"{name}:", np.sum(np.abs(cpp_matrix - np_matrix[:rows, :cols]) ** 2))
-        print()
-
-
 def get_metric_landmarks(screen_landmarks, pcf):
     screen_landmarks = project_xy(screen_landmarks, pcf)
     depth_offset = np.mean(screen_landmarks[2, :])
@@ -2506,7 +2462,6 @@ def get_metric_landmarks(screen_landmarks, pcf):
     pose_transform_mat = solve_weighted_orthogonal_problem(
         canonical_metric_landmarks, metric_landmarks, landmark_weights
     )
-    cpp_compare("pose_transform_mat", pose_transform_mat)
 
     inv_pose_transform_mat = np.linalg.inv(pose_transform_mat)
     inv_pose_rotation = inv_pose_transform_mat[:3, :3]
@@ -2520,6 +2475,7 @@ def get_metric_landmarks(screen_landmarks, pcf):
 
 
 def project_xy(landmarks, pcf):
+    # in simple case x_scale=1 and y_scale=height/width
     x_scale = pcf.right - pcf.left
     y_scale = pcf.top - pcf.bottom
     x_translation = pcf.left
@@ -2573,20 +2529,13 @@ def solve_weighted_orthogonal_problem(source_points, target_points, point_weight
 
 
 def internal_solve_weighted_orthogonal_problem(sources, targets, sqrt_weights):
-    cpp_compare("sources", sources)
-    cpp_compare("targets", targets)
-
     # tranposed(A_w).
     weighted_sources = sources * sqrt_weights[None, :]
     # tranposed(B_w).
     weighted_targets = targets * sqrt_weights[None, :]
 
-    cpp_compare("weighted_sources", weighted_sources)
-    cpp_compare("weighted_targets", weighted_targets)
-
     # w = tranposed(j_w) j_w.
     total_weight = np.sum(sqrt_weights * sqrt_weights)
-    log("total_weight", total_weight)
 
     # Let C = (j_w tranposed(j_w)) / (tranposed(j_w) j_w).
     # Note that C = tranposed(C), hence (I - C) = tranposed(I - C).
@@ -2597,39 +2546,30 @@ def internal_solve_weighted_orthogonal_problem(sources, targets, sqrt_weights):
     # where c_w = tranposed(A_w) j_w / w is a k x 1 vector calculated here:
     twice_weighted_sources = weighted_sources * sqrt_weights[None, :]
     source_center_of_mass = np.sum(twice_weighted_sources, axis=1) / total_weight
-    log("source_center_of_mass", source_center_of_mass)
-
+    
     # tranposed((I - C) A_w) = tranposed(A_w) (I - C) =
     # tranposed(A_w) - tranposed(A_w) C = tranposed(A_w) - c_w tranposed(j_w).
     centered_weighted_sources = weighted_sources - np.matmul(
         source_center_of_mass[:, None], sqrt_weights[None, :]
     )
-    cpp_compare("centered_weighted_sources", centered_weighted_sources)
 
     design_matrix = np.matmul(weighted_targets, centered_weighted_sources.T)
-    cpp_compare("design_matrix", design_matrix)
-    log("design_matrix_norm", np.linalg.norm(design_matrix))
 
     rotation = compute_optimal_rotation(design_matrix)
 
     scale = compute_optimal_scale(
         centered_weighted_sources, weighted_sources, weighted_targets, rotation
     )
-    log("scale", scale)
 
     rotation_and_scale = scale * rotation
 
     pointwise_diffs = weighted_targets - np.matmul(rotation_and_scale, weighted_sources)
-    cpp_compare("pointwise_diffs", pointwise_diffs)
 
     weighted_pointwise_diffs = pointwise_diffs * sqrt_weights[None, :]
-    cpp_compare("weighted_pointwise_diffs", weighted_pointwise_diffs)
 
     translation = np.sum(weighted_pointwise_diffs, axis=1) / total_weight
-    log("translation", translation)
 
     transform_mat = combine_transform_matrix(rotation_and_scale, translation)
-    cpp_compare("transform_mat", transform_mat)
 
     return transform_mat
 
@@ -2646,12 +2586,7 @@ def compute_optimal_rotation(design_matrix):
     if np.linalg.det(postrotation) * np.linalg.det(prerotation) < 0:
         postrotation[:, 2] = -1 * postrotation[:, 2]
 
-    cpp_compare("postrotation", postrotation)
-    cpp_compare("prerotation", prerotation)
-
     rotation = np.matmul(postrotation, prerotation)
-
-    cpp_compare("rotation", rotation)
 
     return rotation
 

@@ -10,7 +10,7 @@ import math
 import transforms3d
 import open3d as o3d
 
-from pylivelinkface import PyLiveLinkFace, FaceBlendShape
+from .live_link_face_formatter import LiveLinkFaceFormatter, FaceBlendShape
 
 from .blendshape_calculator import BlendshapeCalculator
 
@@ -29,19 +29,8 @@ points_idx.sort()
 
 # Calculates the 3d rotation and 3d landmarks from the 2d landmarks
 def calculate_rotation(face_landmarks, pcf: PCF, image_shape):
-    frame_width, frame_height, channels = image_shape
-    focal_length = frame_width
-    center = (frame_width / 2, frame_height / 2)
-    camera_matrix = np.array(
-        [[focal_length, 0, center[0]], [0, focal_length, center[1]], [0, 0, 1]],
-        dtype="double",
-    )
-
-    dist_coeff = np.zeros((4, 1))
-
     landmarks = np.array(
         [(lm.x, lm.y, lm.z) for lm in face_landmarks.landmark[:468]]
-
     )
     landmarks = landmarks.T
 
@@ -49,21 +38,7 @@ def calculate_rotation(face_landmarks, pcf: PCF, image_shape):
         landmarks.copy(), pcf
     )
 
-    model_points = metric_landmarks[0:3, points_idx].T
-    image_points = (
-        landmarks[0:2, points_idx].T
-        * np.array([frame_width, frame_height])[None, :]
-    )
-
-    success, rotation_vector, translation_vector = cv2.solvePnP(
-        model_points,
-        image_points,
-        camera_matrix,
-        dist_coeff,
-        flags=cv2.SOLVEPNP_ITERATIVE,
-    )
-
-    return pose_transform_mat, metric_landmarks, rotation_vector, translation_vector
+    return pose_transform_mat, metric_landmarks
 
 
 class FacialTranslator():
@@ -79,7 +54,7 @@ class FacialTranslator():
             min_detection_confidence=0.5,
             min_tracking_confidence=0.5)
 
-        self.live_link_face = PyLiveLinkFace(fps = 30, filter_size = 4)
+        self.live_link_face = LiveLinkFaceFormatter(fps = 30, filter_size = 4)
         self.blendshape_calulator = BlendshapeCalculator()
 
         self.ip = ip
@@ -87,22 +62,13 @@ class FacialTranslator():
 
         self.image_height, self.image_width, channels = (480, 640, 3)
 
-        # pseudo camera internals
-        focal_length = self.image_width
-        center = (self.image_width / 2, self.image_height / 2)
-        camera_matrix = np.array(
-            [[focal_length, 0, center[0]], [0, focal_length, center[1]], [0, 0, 1]],
-            dtype="double",
-        )
-
         self.pcf = PCF(
             near=1,
             far=10000,
             frame_height=self.image_height,
             frame_width=self.image_width,
-            fy=camera_matrix[1, 1],
+            fy=self.image_width,
         )
-        self.drawing_spec = drawing_utils.DrawingSpec(thickness=1, circle_radius=1)
         self.lock = threading.Lock()
         self.got_new_data = False
         self.network_data = b''
@@ -148,6 +114,8 @@ class FacialTranslator():
                     break
             print("Video capture received no more frames.")
             cap.release()
+            
+        
 
         else:
             # for input images
@@ -178,8 +146,8 @@ class FacialTranslator():
         face_image_3d = None
         if results.multi_face_landmarks:
             for face_landmarks in results.multi_face_landmarks:
-                pose_transform_mat, metric_landmarks, rotation_vector, translation_vector = calculate_rotation(face_landmarks, self.pcf, image.shape)
-                
+                pose_transform_mat, metric_landmarks = calculate_rotation(face_landmarks, self.pcf, image.shape)
+
                 # draw the face mesh
                 drawing_utils.draw_landmarks(
                     image=image,
@@ -219,7 +187,8 @@ class FacialTranslator():
                     FaceBlendShape.HeadPitch, pitch)
                 self.live_link_face.set_blendshape(
                     FaceBlendShape.HeadRoll, roll)
-                self.live_link_face.set_blendshape(FaceBlendShape.HeadYaw, yaw)
+                self.live_link_face.set_blendshape(
+                    FaceBlendShape.HeadYaw, yaw)
 
         # Flip the image horizontally for a selfie-view display.
         self.image = cv2.flip(image, 1).astype('uint8')

@@ -1,5 +1,5 @@
 
-from pylivelinkface.pylivelinkface import FaceBlendShape
+from .live_link_face_formatter import FaceBlendShape
 
 
 class BlendShapeConfig:
